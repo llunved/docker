@@ -3,8 +3,23 @@ package portallocator
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
+	"regexp"
+	"strconv"
 	"sync"
+
+	log "github.com/Sirupsen/logrus"
+)
+
+const (
+	defaultPortRangeStart = 49153
+	defaultPortRangeEnd   = 65535
+)
+
+var (
+	BeginPortRange = 0
+	EndPortRange   = 0
 )
 
 type portMap struct {
@@ -30,11 +45,6 @@ func newProtoMap() protoMap {
 
 type ipMapping map[string]protoMap
 
-const (
-	BeginPortRange = 49153
-	EndPortRange   = 65535
-)
-
 var (
 	ErrAllPortsAllocated = errors.New("all ports are allocated")
 	ErrUnknownProtocol   = errors.New("unknown protocol")
@@ -57,6 +67,32 @@ func NewErrPortAlreadyAllocated(ip string, port int) ErrPortAlreadyAllocated {
 		ip:   ip,
 		port: port,
 	}
+}
+
+func getPortRange() (int, int) {
+	const param = "/proc/sys/net/ipv4/ip_local_port_range"
+	var (
+		start   = defaultPortRangeStart
+		end     = defaultPortRangeEnd
+		rePorts = regexp.MustCompile(`\d+`)
+	)
+
+	if line, err := ioutil.ReadFile(param); err != nil {
+		log.Errorf("Failed to read %s kernel parameter: %s", param, err.Error())
+	} else {
+		ports := rePorts.FindAllString(string(line), 2)
+		if len(ports) != 2 {
+			log.Errorf("Failed to parse port range from %s", param)
+		} else {
+			start, _ = strconv.Atoi(ports[0])
+			end, _ = strconv.Atoi(ports[1])
+		}
+	}
+	return start, end
+}
+
+func init() {
+	BeginPortRange, EndPortRange = getPortRange()
 }
 
 func (e ErrPortAlreadyAllocated) IP() string {

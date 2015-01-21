@@ -5,6 +5,10 @@ import (
 	"testing"
 )
 
+func init() {
+	BeginPortRange = defaultPortRangeStart
+	EndPortRange = defaultPortRangeStart + 500
+}
 func reset() {
 	ReleaseAll()
 }
