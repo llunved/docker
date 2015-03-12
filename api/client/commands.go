@@ -2011,13 +2011,16 @@ func (cli *DockerCli) CmdSearch(args ...string) error {
 
 	v := url.Values{}
 	v.Set("term", cmd.Arg(0))
+	if *noIndex {
+		v.Set("noIndex", "1")
+	}
 
 	body, _, err := readBody(cli.call("GET", "/images/search?"+v.Encode(), nil, true))
 
 	if err != nil {
 		return err
 	}
-	outs := engine.NewTable("star_count", 0)
+	outs := engine.NewTable("index_name", 0)
 	if _, err := outs.ReadListFrom(body); err != nil {
 		return err
 	}
@@ -2034,19 +2037,19 @@ func (cli *DockerCli) CmdSearch(args ...string) error {
 		}
 		indexName := out.Get("index_name")
 		if !*noTrunc {
-	                // Shorten index name to DOMAIN.TLD unless --no-trunc is given. 
-        	        if host, _, err := net.SplitHostPort(indexName); err == nil { 
-                	        indexName = host 
-                	} 
-                	// do not shorten ip address 
-                	if net.ParseIP(indexName) == nil { 
-                        	// shorten index name just to the last 2 components (`DOMAIN.TLD`) 
-                        	indexNameSubStrings := strings.Split(indexName, ".") 
-                        	if len(indexNameSubStrings) > 2 { 
-                                	indexName = strings.Join(indexNameSubStrings[len(indexNameSubStrings)-2:], ".") 
-                        	} 
-                	}
-		} 
+			// Shorten index name to DOMAIN.TLD unless --no-trunc is given.
+			if host, _, err := net.SplitHostPort(indexName); err == nil {
+				indexName = host
+			}
+			// do not shorten ip address
+			if net.ParseIP(indexName) == nil {
+				// shorten index name just to the last 2 components (`DOMAIN.TLD`)
+				indexNameSubStrings := strings.Split(indexName, ".")
+				if len(indexNameSubStrings) > 2 {
+					indexName = strings.Join(indexNameSubStrings[len(indexNameSubStrings)-2:], ".")
+				}
+			}
+		}
 
 		desc := strings.Replace(out.Get("description"), "\n", " ", -1)
 		desc = strings.Replace(desc, "\r", " ", -1)
@@ -2054,9 +2057,9 @@ func (cli *DockerCli) CmdSearch(args ...string) error {
 			desc = utils.Trunc(desc, 42) + "..."
 		}
 		if !*noIndex {
-			fmt.Fprintf(w, "%s:\t%s/%s\t%s\t%d\t", indexName, out.Get("registry_name"),out.Get("name"), desc, out.GetInt("star_count"))
+			fmt.Fprintf(w, "%s:\t%s/%s\t%s\t%d\t", indexName, out.Get("registry_name"), out.Get("name"), desc, out.GetInt("star_count"))
 		} else {
-			fmt.Fprintf(w, "%s/%s\t%s\t%d\t", out.Get("registry_name"),out.Get("name"), desc, out.GetInt("star_count"))
+			fmt.Fprintf(w, "%s/%s\t%s\t%d\t", out.Get("registry_name"), out.Get("name"), desc, out.GetInt("star_count"))
 		}
 		if out.GetBool("is_official") {
 			fmt.Fprint(w, "[OK]")
