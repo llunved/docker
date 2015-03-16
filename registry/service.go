@@ -86,21 +86,7 @@ func (s *Service) Auth(job *engine.Job) engine.Status {
 // Factory for search result comparison function. Either it takes index name
 // into consideration or not.
 func getSearchResultsCmpFunc(withIndex bool) func(fst, snd *engine.Env) int {
-	// Compare two items in the result table of search command. First compare
-	// the index we found the result in. Second compare their rating. Then
-	// compare their fully qualified name (registry/name).
-	cmpFunc := func(fst, snd *engine.Env) int {
-		if withIndex {
-			indA := fst.Get("index_name")
-			indB := snd.Get("index_name")
-			switch {
-			case indA < indB:
-				return -1
-			case indA > indB:
-				return 1
-			}
-		}
-
+	cmpByStarCount := func(fst, snd *engine.Env) int {
 		starsA := fst.Get("star_count")
 		starsB := snd.Get("star_count")
 
@@ -120,23 +106,46 @@ func getSearchResultsCmpFunc(withIndex bool) func(fst, snd *engine.Env) int {
 		case starsA < starsB:
 			return 1
 		}
+		return 0
+	}
 
-		regA := fst.Get("registry_name")
-		regB := snd.Get("registry_name")
+	cmpStringField := func(field string, fst, snd *engine.Env) int {
+		valA := fst.Get(field)
+		valB := snd.Get(field)
 		switch {
-		case regA < regB:
+		case valA < valB:
 			return -1
-		case regA > regB:
+		case valA > valB:
 			return 1
 		}
+		return 0
+	}
 
-		nameA := fst.Get("name")
-		nameB := snd.Get("name")
-		switch {
-		case nameA < nameB:
-			return -1
-		case nameA > nameB:
-			return 1
+	// Compare two items in the result table of search command. First compare
+	// the index we found the result in. Second compare their rating. Then
+	// compare their fully qualified name (registry/name).
+	cmpFunc := func(fst, snd *engine.Env) int {
+		if withIndex {
+			if res := cmpStringField("index_name", fst, snd); res != 0 {
+				return res
+			}
+			if byStarCount := cmpByStarCount(fst, snd); byStarCount != 0 {
+				return byStarCount
+			}
+		}
+		if res := cmpStringField("registry_name", fst, snd); res != 0 {
+			return res
+		}
+		if !withIndex {
+			if byStarCount := cmpByStarCount(fst, snd); byStarCount != 0 {
+				return byStarCount
+			}
+		}
+		if res := cmpStringField("name", fst, snd); res != 0 {
+			return res
+		}
+		if res := cmpStringField("description", fst, snd); res != 0 {
+			return res
 		}
 		return 0
 	}
@@ -174,7 +183,7 @@ func searchTerm(job *engine.Job, outs *engine.Table, term string) error {
 		// If not, assume REGISTRY = INDEX
 		registryName := repoInfo.Index.Name
 		if RepositoryNameHasIndex(result.Name) {
-			registryName, result.Name = splitReposName(result.Name, false)
+			registryName, result.Name = SplitReposName(result.Name, false)
 		}
 		out.Import(result)
 		// Now add the index in which we found the result to the json. (not sure this is really the right place for this)
@@ -192,8 +201,11 @@ func searchTerm(job *engine.Job, outs *engine.Table, term string) error {
 func removeSearchDuplicates(data []*engine.Env) (res []*engine.Env) {
 	var prevIndex = 0
 
+	if len(data) > 0 {
+		res = []*engine.Env{data[0]}
+	}
 	for i := 1; i < len(data); i++ {
-		prev := data[prevIndex]
+		prev := res[prevIndex]
 		curr := data[i]
 		if prev.Get("registry_name") == curr.Get("registry_name") && prev.Get("name") == curr.Get("name") {
 			// Repositories are equal, delete one of them.
