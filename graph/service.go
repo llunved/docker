@@ -121,11 +121,70 @@ func (s *TagStore) CmdGet(job *engine.Job) error {
 
 // CmdLookup return an image encoded in JSON
 func (s *TagStore) CmdLookup(job *engine.Job) error {
-	if len(job.Args) != 1 {
-		return fmt.Errorf("usage: %s NAME", job.Name)
+	if len(job.Args) < 1 || len(job.Args) > 3 {
+		return fmt.Errorf("usage: %s NAME [REMOTE] [REMOTEONLY]", job.Name)
 	}
 	name := job.Args[0]
-	if image, err := s.LookupImage(name); err == nil && image != nil {
+
+	// By default we only inspect locally
+
+	lookupRemote := false
+	lookupRemoteOnly := false
+
+	len(job.Args) > 1 && lookupRemote = job.Args[1]
+	len(job.Args) > 2 && lookupRemoteOnly = job.Args[2]
+
+	// Try to find the local image unless we want to check remotely
+	if !lookupRemoteOnly && image, err := s.LookupImage(name); err != nil {
+		return err
+	}
+
+	// No image? Try remote?
+	if lookupRemote && image == nil {
+
+		repoInfo, err := registry.ResolveRepositoryInfo(job, name)
+		if err != nil {
+			return err
+		}
+
+	        job.GetenvJson("authConfig", authConfig)
+		job.GetenvJson("metaHeaders", &metaHeaders)
+
+	        logrus.Debugf("inspecting remote image on host %q with remote name %q", repoInfo.Index.Name, repoInfo.RemoteName)
+	        endpoint, err := repoInfo.GetEndpoint()
+	        if err != nil {
+	                return err
+	        }
+
+	        r, err := registry.NewSession(authConfig, registry.HTTPRequestFactory(metaHeaders), endpoint, true)
+	        if err != nil {
+	                return err
+	        }
+
+// Go get the remote repo, figure out if we have a tag or DIGEST (need to add that to the interafce?)
+// Set tag to latest if no tag or digest
+// Get imgID, get data
+
+	        repoData, err := r.GetRepositoryData(repoInfo.RemoteName)
+	        if err != nil {
+	                if strings.Contains(err.Error(), "HTTP code: 404") {
+	                        out.Write(sf.FormatStatus("", " not found"))
+	                        return fmt.Errorf("Error: image %s not found", utils.ImageReference(repoInfo.RemoteName, askedTag))
+	                }
+	                // Unexpected HTTP error
+	                return err
+	        }
+
+FIXME		image, _, err := r.GetRemoteImageJSON(id, endpoint, token)
+
+	}
+
+
+	if err != nil {
+		return err
+	}
+
+	if image != nil {
 		if job.GetenvBool("raw") {
 			b, err := image.RawJson()
 			if err != nil {

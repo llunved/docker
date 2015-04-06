@@ -149,6 +149,7 @@ func (s *TagStore) pullRepository(r *registry.Session, out io.Writer, repoInfo *
 		return err
 	}
 
+// FIXME Need to Understand this.
 	if strings.HasPrefix(repoInfo.LocalName, registry.INDEXNAME+"/") {
 		newEndpoints := []string{}
 		unofficial := []string{}
