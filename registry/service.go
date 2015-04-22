@@ -36,7 +36,7 @@ func (s *Service) Install(eng *engine.Engine) error {
 	eng.Register("resolve_index", s.ResolveIndex)
 	eng.Register("registry_config", s.GetRegistryConfig)
 	eng.Register("remote_images", s.ListRepository)
-	eng.Register("remote_inspect", s.ListRepository)
+	eng.Register("remote_inspect", s.RemoteInspect)
 	return nil
 }
 
@@ -447,7 +447,7 @@ func (s *Service) ListRepository(job *engine.Job) error {
 // TODO:
 // * Add handling for DIGESTs
 // * V2 support?
-func (s *Service) remoteInspect(job *engine.Job) error {
+func (s *Service) RemoteInspect(job *engine.Job) error {
 	if n := len(job.Args); n != 1 {
 		return fmt.Errorf("Usage: %s NAME [TAG|DIGEST]", job.Name)
 	}
