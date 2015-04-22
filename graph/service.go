@@ -128,7 +128,7 @@ func (s *TagStore) CmdLookup(job *engine.Job) error {
 
 	// By default we only inspect locally
 
-	lookupRemote := false
+	lookupRemote := true
 	lookupRemoteOnly := false
 
 	len(job.Args) > 1 && lookupRemote = job.Args[1]
