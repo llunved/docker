@@ -1039,7 +1039,7 @@ func getImagesByName(eng *engine.Engine, version version.Version, w http.Respons
 	if vars == nil {
 		return fmt.Errorf("Missing parameter")
 	}
-	var job = eng.Job("image_inspect", vars["name"])
+	var job = eng.Job("image_inspect", vars["name"], vars["remote"], vars["remoteonly"])
 	if version.LessThan("1.12") {
 		job.SetenvBool("raw", true)
 	}
