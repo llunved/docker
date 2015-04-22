@@ -35,6 +35,7 @@ func (s *Service) Install(eng *engine.Engine) error {
 	eng.Register("resolve_repository", s.ResolveRepository)
 	eng.Register("resolve_index", s.ResolveIndex)
 	eng.Register("registry_config", s.GetRegistryConfig)
+	eng.Register("remote_images", s.ListRepository)
 	return nil
 }
 
@@ -401,4 +402,42 @@ func (s *Service) GetRegistryConfig(job *engine.Job) error {
 	out.WriteTo(job.Stdout)
 
 	return nil
+}
+
+// Remotely list images and tags in a repository
+func (s *Service) ListRepository(job *engine.Job) error {
+	if n := len(job.Args); n != 1 {
+		return fmt.Errorf("Usage: %s NAME", job.Name)
+	}
+	var (
+		name = job.Args[0]
+		outs = engine.NewTable("", 0)
+	)
+
+	repoInfo, err := ResolveRepositoryInfo(job, name)
+	if err != nil {
+		return err
+	}
+	endpoint, err := repoInfo.GetEndpoint()
+	if err != nil {
+		return err
+	}
+	r, err := NewSession(authConfig, HTTPRequestFactory(metaHeaders), endpoint, true)
+	if err != nil {
+		return err
+	}
+
+	tagsList, err := r.GetRemoteTags(repoData.Endpoints, repoInfo.RemoteName, repoData.Tokens)
+	if err != nil {
+		logrus.Errorf("unable to get remote tags: %s", err)
+		out.Write(sf.FormatStatus("", " failed"))
+		return err
+	}
+
+	if _, err := tagsList.WriteListTo(job.Stdout); err != nil {
+		return err
+	}
+
+	return nil
+
 }

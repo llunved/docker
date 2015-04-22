@@ -269,42 +269,21 @@ func getContainersExport(eng *engine.Engine, version version.Version, w http.Res
 
 // Remotely list images and tags in repository
 func getRemoteImages(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-        if err := parseForm(r); err != nil {
-                return err
-        }
+	if err := parseForm(r); err != nil {
+		return err
+	}
 
-        var (
-                err  error
-                outs *engine.Table
-                job  = eng.Job("remote_images")
-        )
+	var (
+		err  error
+		outs *engine.Table
+		job  = eng.Job("remote_images")
+	)
 
-
-        if err := job.Run(); err != nil {
-                return err
-        }
+	if err := job.Run(); err != nil {
+		return err
+	}
 	return nil
 }
-
-// Remotely inspect repository
-func getRemoteInspect(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-        if err := parseForm(r); err != nil {
-                return err
-        }
-
-        var (
-                err  error
-                outs *engine.Table
-                job  = eng.Job("remote_inspect")
-        )
-
-
-        if err := job.Run(); err != nil {
-                return err
-        }
-	return nil
-}
-
 
 func getImagesJSON(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
 	if err := parseForm(r); err != nil {
