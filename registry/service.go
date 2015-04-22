@@ -35,6 +35,8 @@ func (s *Service) Install(eng *engine.Engine) error {
 	eng.Register("resolve_repository", s.ResolveRepository)
 	eng.Register("resolve_index", s.ResolveIndex)
 	eng.Register("registry_config", s.GetRegistryConfig)
+	eng.Register("remote_images", s.ListRepository)
+	eng.Register("remote_inspect", s.ListRepository)
 	return nil
 }
 
@@ -401,4 +403,142 @@ func (s *Service) GetRegistryConfig(job *engine.Job) error {
 	out.WriteTo(job.Stdout)
 
 	return nil
+}
+
+// Remotely list images and tags in a repository
+func (s *Service) ListRepository(job *engine.Job) error {
+	if n := len(job.Args); n != 1 {
+		return fmt.Errorf("Usage: %s NAME", job.Name)
+	}
+	var (
+		name = job.Args[0]
+		outs = engine.NewTable("", 0)
+	)
+
+	repoInfo, err := ResolveRepositoryInfo(job, name)
+	if err != nil {
+		return err
+	}
+	endpoint, err := repoInfo.GetEndpoint()
+	if err != nil {
+		return err
+	}
+	r, err := NewSession(authConfig, HTTPRequestFactory(metaHeaders), endpoint, true)
+	if err != nil {
+		return err
+	}
+
+	tagsList, err := r.GetRemoteTags(repoData.Endpoints, repoInfo.RemoteName, repoData.Tokens)
+	if err != nil {
+		logrus.Errorf("unable to get remote tags: %s", err)
+		out.Write(sf.FormatStatus("", " failed"))
+		return err
+	}
+
+	if _, err := tagsList.WriteListTo(job.Stdout); err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
+// Remotely inspect a repository
+// TODO:
+// * Add handling for DIGESTs
+// * V2 support?
+func (s *Service) remoteInspect(job *engine.Job) error {
+	if n := len(job.Args); n != 1 {
+		return fmt.Errorf("Usage: %s NAME [TAG|DIGEST]", job.Name)
+	}
+	var (
+		name     = job.Args[0]
+		askedTag string
+		outs     = engine.NewTable("", 0)
+	)
+
+	if len(job.Args) > 1 {
+		askedTag = job.Args[1]
+	}
+
+	repoInfo, err := ResolveRepositoryInfo(job, name)
+	if err != nil {
+		return err
+	}
+
+	logrus.Debugf("inspecting remote image on host %q with remote name %q", repoInfo.Index.Name, repoInfo.RemoteName)
+
+	endpoint, err := repoInfo.GetEndpoint()
+	if err != nil {
+		return err
+	}
+	r, err := NewSession(authConfig, HTTPRequestFactory(metaHeaders), endpoint, true)
+	if err != nil {
+		return err
+	}
+
+	// find image, get ID
+	tagsList, err := r.GetRemoteTags(repoData.Endpoints, repoInfo.RemoteName, repoData.Tokens)
+	if err != nil {
+		logrus.Errorf("unable to get remote tags: %s", err)
+		out.Write(sf.FormatStatus("", " failed"))
+		return err
+	}
+
+	for tag, id := range tagsList {
+		if askedTag == "" || tag == askedTag {
+			repoData.ImgList[id] = &registry.ImgData{
+				ID:       id,
+				Tag:      tag,
+				Checksum: "",
+			}
+		}
+	}
+
+	// TODO catch case of tag not found
+
+	// Now get and output JSON
+	for _, image := range repoData.ImgList {
+		for _, endpoint := range repoData.Endpoints {
+			imageJSON, _, err := r.GetRemoteImageJSON(image.id, endpoint, repoData.Tokens)
+			if err != nil {
+				logrus.Errorf("unable to get remote JSON: %s", err)
+				out.Write(sf.FormatStatus("", " failed"))
+				return err
+			}
+			if imageJSON != nil {
+				if job.GetenvBool("raw") {
+					b, err := imageJSON.RawJson()
+					if err != nil {
+						return err
+					}
+					job.Stdout.Write(b)
+					return nil
+				}
+
+				out := &engine.Env{}
+				out.SetJson("Id", imageJSON.ID)
+				out.SetJson("Parent", imageJSON.Parent)
+				out.SetJson("Comment", imageJSON.Comment)
+				out.SetAuto("Created", imageJSON.Created)
+				out.SetJson("Container", imageJSON.Container)
+				out.SetJson("ContainerConfig", imageJSON.ContainerConfig)
+				out.Set("DockerVersion", imageJSON.DockerVersion)
+				out.SetJson("Author", imageJSON.Author)
+				out.SetJson("Config", imageJSON.Config)
+				out.Set("Architecture", imageJSON.Architecture)
+				out.Set("Os", imageJSON.OS)
+				out.SetInt64("Size", imageJSON.Size)
+				out.SetInt64("VirtualSize", imageJSON.GetParentsSize(0)+imageJSON.Size)
+				if _, err = out.WriteTo(job.Stdout); err != nil {
+					return err
+				}
+				break
+			}
+		}
+
+	}
+
+	return nil
+
 }
