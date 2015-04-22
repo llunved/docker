@@ -135,8 +135,10 @@ func (s *TagStore) CmdLookup(job *engine.Job) error {
 	len(job.Args) > 2 && lookupRemoteOnly = job.Args[2]
 
 	// Try to find the local image unless we want to check remotely
-	if !lookupRemoteOnly && image, err := s.LookupImage(name); err != nil {
-		return err
+	if !lookupRemoteOnly {
+		if image, err := s.LookupImage(name); err != nil {
+			return err
+		}
 	}
 
 	// No image? Try remote?
@@ -147,41 +149,52 @@ func (s *TagStore) CmdLookup(job *engine.Job) error {
 			return err
 		}
 
-	        job.GetenvJson("authConfig", authConfig)
+		job.GetenvJson("authConfig", authConfig)
 		job.GetenvJson("metaHeaders", &metaHeaders)
 
-	        logrus.Debugf("inspecting remote image on host %q with remote name %q", repoInfo.Index.Name, repoInfo.RemoteName)
-	        endpoint, err := repoInfo.GetEndpoint()
-	        if err != nil {
-	                return err
-	        }
+		logrus.Debugf("inspecting remote image on host %q with remote name %q", repoInfo.Index.Name, repoInfo.RemoteName)
+		endpoint, err := repoInfo.GetEndpoint()
+		if err != nil {
+			return err
+		}
 
-	        r, err := registry.NewSession(authConfig, registry.HTTPRequestFactory(metaHeaders), endpoint, true)
-	        if err != nil {
-	                return err
-	        }
+		r, err := registry.NewSession(authConfig, registry.HTTPRequestFactory(metaHeaders), endpoint, true)
+		if err != nil {
+			return err
+		}
 
-// Go get the remote repo, figure out if we have a tag or DIGEST (need to add that to the interafce?)
-// Set tag to latest if no tag or digest
-// Get imgID, get data
+		// Go get the remote repo, figure out if we have a tag or DIGEST (need to add that to the interafce?)
+		// Set tag to latest if no tag or digest
+		// Get imgID, get data
 
-	        repoData, err := r.GetRepositoryData(repoInfo.RemoteName)
-	        if err != nil {
-	                if strings.Contains(err.Error(), "HTTP code: 404") {
-	                        out.Write(sf.FormatStatus("", " not found"))
-	                        return fmt.Errorf("Error: image %s not found", utils.ImageReference(repoInfo.RemoteName, askedTag))
-	                }
-	                // Unexpected HTTP error
-	                return err
-	        }
+		repoName, askedTag := parsers.ParseRepositoryTag(name)
+		if askedTag == "" {
+			askedTag = DEFAULTTAG
+		}
 
-FIXME		image, _, err := r.GetRemoteImageJSON(id, endpoint, token)
+		// find image, get ID
+		tagsList, err := r.GetRemoteTags(repoData.Endpoints, repoInfo.RemoteName, repoData.Tokens)
+		if err != nil {
+			logrus.Errorf("unable to get remote tags: %s", err)
+			out.Write(sf.FormatStatus("", " failed"))
+			return err
+		}
 
-	}
-
-
-	if err != nil {
-		return err
+		for tag, id := range tagsList {
+			if tag == askedTag {
+				for _, endpoint := range repoData.Endpoints {
+					image, _, err := r.GetRemoteImageJSON(image.id, endpoint, repoData.tokens)
+					if err != nil {
+						logrus.Errorf("unable to get remote JSON: %s", err)
+						out.Write(sf.FormatStatus("", " failed"))
+						return err
+					}
+					if image != nil {
+						break
+					}
+				}
+			}
+		}
 	}
 
 	if image != nil {
